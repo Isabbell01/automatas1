@@ -1,0 +1,6 @@
+var suma = 10 + 20;
+if (suma > 25) {
+    print(suma);
+} else {
+    print(0);
+}
