@@ -248,14 +248,17 @@ public class analizadorLexico {
         }
 
         private void primary() throws AnalizadorSintacticoException {
-            if (match(7000) || match(8000) || 
-                match(6000) || (peek() != null && peek().id >= 6000 && peek().id < tokenIdentificador)) {
-                // Números o identificadores - aceptados
+            Token t = peek();
+            if (t != null && ((t.id >= 7000 && t.id < tokenConstanteEntera) || // Constantes enteras
+                    (t.id >= 8000 && t.id < tokenConstanteFlotante) || // Constantes flotantes
+                    (t.id >= 6000 && t.id < tokenIdentificador))) { // Identificadores
+                advance(); // ¡IMPORTANTE: consumir el token!
             } else if (match(5010)) { // (
                 expression();
                 consume(5011, "Se esperaba ')' después de expresión");
             } else {
-                throw new AnalizadorSintacticoException("Se esperaba expresión");
+                throw new AnalizadorSintacticoException("Se esperaba expresión en línea " +
+                        (t != null ? t.linea : "desconocida"));
             }
         }
     }
