@@ -48,6 +48,7 @@ public class analizadorLexico {
         palabrasReservadas.put("return", 1260);
         palabrasReservadas.put("void", 1270);
         palabrasReservadas.put("print", 1280);
+
         // Operadores
         operadores.put("!=", 2113);
         operadores.put("==", 2111);
