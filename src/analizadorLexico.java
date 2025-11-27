@@ -9,18 +9,17 @@ import java.util.*;
  */
 public class analizadorLexico {
 
-    
     private static final Map<String, Integer> palabrasReservadas = new LinkedHashMap<>();
     private static final Map<String, Integer> operadores = new LinkedHashMap<>();
     private static final Map<String, Integer> signos = new LinkedHashMap<>();
     private static final Map<String, Integer> agrupacion = new LinkedHashMap<>();
 
+    // Contadores globales para IDs dinámicos
     private static int tokenIdentificador = 6000;
     private static int tokenConstanteEntera = 7000;
     private static int tokenConstanteFlotante = 8000;
 
     static {
-        
         palabrasReservadas.put("abstract", 1010);
         palabrasReservadas.put("assert", 1020);
         palabrasReservadas.put("boolean", 1030);
@@ -48,8 +47,8 @@ public class analizadorLexico {
         palabrasReservadas.put("new", 1250);
         palabrasReservadas.put("return", 1260);
         palabrasReservadas.put("void", 1270);
-
-        // Operadores 
+        palabrasReservadas.put("print", 1280);
+        // Operadores
         operadores.put("!=", 2113);
         operadores.put("==", 2111);
         operadores.put(">=", 2072);
@@ -69,13 +68,11 @@ public class analizadorLexico {
         operadores.put("|", 2140);
         operadores.put("^", 2150);
 
-        // Signos 
+        // Signos
         signos.put(";", 3010);
         signos.put(",", 3020);
-        // no tratamos '.' aquí como signo porque puede ser parte de un número
-        // signos.put(".", 3030);
 
-        // Agrupación 
+        // Agrupación
         agrupacion.put("{", 4010);
         agrupacion.put("}", 4011);
         agrupacion.put("(", 5010);
@@ -84,12 +81,12 @@ public class analizadorLexico {
         agrupacion.put("]", 5031);
     }
 
-    // Clase Token 
-    private static class Token {
-        final int id;
-        final String lexema;
-        final int linea;
-        final int columna;
+    // Clase Token
+    public static class Token {
+        public final int id;
+        public final String lexema;
+        public final int linea;
+        public final int columna;
 
         Token(int id, String lexema, int linea, int columna) {
             this.id = id;
@@ -104,20 +101,49 @@ public class analizadorLexico {
         }
     }
 
-    // Excepciones 
-    private static class AnalizadorLexicoException extends Exception {
-        AnalizadorLexicoException(String mensaje) {
-            super(mensaje);
+    //Analizador Semantico
+    static class Simbolo {
+        String nombre;
+        String tipo;
+
+        public Simbolo(String nombre, String tipo) {
+            this.nombre = nombre;
+            this.tipo = tipo;
         }
+    }
+
+    static class TablaSimbolos {
+        private Map<String, Simbolo> tabla = new HashMap<>();
+
+        public void declarar(Token token, String tipo) throws AnalizadorSemanticoException {
+            if (tabla.containsKey(token.lexema)) {
+                throw new AnalizadorSemanticoException("Error Semantico: La variable '" + token.lexema + "' ya ha sido declarada. Linea " + token.linea);
+            }
+            tabla.put(token.lexema, new Simbolo(token.lexema, tipo));
+        }
+
+        public Simbolo obtener(Token token) throws AnalizadorSemanticoException {
+            if (!tabla.containsKey(token.lexema)) {
+                throw new AnalizadorSemanticoException("Error Semantico: La variable '" + token.lexema + "' no ha sido declarada. Linea " + token.linea);
+            }
+            return tabla.get(token.lexema);
+        }
+    }
+
+    // Excepciones
+    private static class AnalizadorLexicoException extends Exception {
+        AnalizadorLexicoException(String mensaje) { super(mensaje); }
     }
 
     private static class AnalizadorSintacticoException extends Exception {
-        AnalizadorSintacticoException(String mensaje) {
-            super(mensaje);
-        }
+        AnalizadorSintacticoException(String mensaje) { super(mensaje); }
     }
 
-    // ANALIZADOR SINTÁCTICO 
+    private static class AnalizadorSemanticoException extends Exception {
+        AnalizadorSemanticoException(String mensaje) { super(mensaje); }
+    }
+
+    //Analizador Sintactico
     private static class Parser {
         private final List<Token> tokens;
         private int current;
@@ -127,21 +153,21 @@ public class analizadorLexico {
             this.tokens = tokens;
             this.current = 0;
         }
-        //analisa el token actual
+
         private Token peek() {
             if (current >= tokens.size()) return null;
             return tokens.get(current);
         }
-        //avanza al siguiente token
+
         private Token advance() {
             if (current < tokens.size()) current++;
             return tokens.get(current - 1);
         }
-        //verifica si el token actual coincide con el id dado
+
         private boolean check(int tokenId) {
             return peek() != null && peek().id == tokenId;
         }
-        //si coincide, avanza y retorna true; si no, retorna false
+
         private boolean match(int tokenId) {
             if (check(tokenId)) {
                 advance();
@@ -159,114 +185,191 @@ public class analizadorLexico {
             return palabrasReservadas.getOrDefault(palabra, -1);
         }
 
-        // Método principal de análisis sintáctico
-        public void parse() throws AnalizadorSintacticoException {
+        public void parse() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
             while (peek() != null) {
                 statement();
             }
             System.out.println("Análisis sintáctico completado - SIN ERRORES");
         }
 
-        private void statement() throws AnalizadorSintacticoException {
-            if (match(getTokenId("if"))) {
+        private void statement() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            // Declaración de variables (int x;)
+            if (match(1220) || match(1180) || match(1030)) {
+                String tipoDato = tokens.get(current - 1).lexema;
+                declaration(tipoDato);
+            }
+            else if (match(getTokenId("if"))) {
                 ifStatement();
-            } else if (match(4010)) { // {
+            }
+            else if (match(1280)) {
+                printStatement();
+            }
+            else if (match(4010)) { // {
                 block();
-            } else {
+            }
+            else {
                 expressionStatement();
             }
         }
 
-        private void ifStatement() throws AnalizadorSintacticoException {
+        private void printStatement() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            consume(5010, "Se esperaba '(' despues de 'print'");
+            expression();
+            consume(5011, "Se esperaba ')' después de la expresión");
+            consume(3010, "Se esperaba ';' al final de la instrucción");
+            System.out.println("Encontrada instrucción PRINT");
+        }
+
+        private void declaration(String tipoDato) throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            Token nombreVar;
+            if (peek() != null && peek().id >= 6000 && peek().id < 7000) {
+                nombreVar = advance();
+            } else {
+                throw new AnalizadorSintacticoException("Se esperaba identificador en línea " + (peek() != null ? peek().linea : "fin"));
+            }
+
+            tablaSimbolos.declarar(nombreVar, tipoDato);
+
+            if (match(2110)) { // =
+                String tipoExpresion = expression();
+
+                if (!tiposCompatibles(tipoDato, tipoExpresion)) {
+                    throw new AnalizadorSemanticoException("Error de tipos: No se puede asignar " + tipoExpresion + " a " + tipoDato);
+                }
+            }
+            consume(3010, "Se esperaba ';'");
+        }
+
+        private boolean tiposCompatibles(String receptor, String valor) {
+            if (receptor.equals(valor)) return true;
+            if (receptor.equals("float") && valor.equals("int")) return true;
+            return false;
+        }
+
+        private void ifStatement() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
             consume(5010, "Se esperaba '(' después de 'if'");
             expression();
             consume(5011, "Se esperaba ')' después de condición");
             statement();
-            
+
             if (match(getTokenId("else"))) {
                 statement();
             }
         }
 
-        private void block() throws AnalizadorSintacticoException {
+        private void block() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
             while (!check(4011) && peek() != null) {
                 statement();
             }
             consume(4011, "Se esperaba '}'");
         }
 
-        private void expressionStatement() throws AnalizadorSintacticoException {
+        private void expressionStatement() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
             expression();
             consume(3010, "Se esperaba ';' después de expresión");
         }
 
-        private void expression() throws AnalizadorSintacticoException {
-            assignment();
+        private String expression() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            return assignment();
         }
 
-        private void assignment() throws AnalizadorSintacticoException {
-            equality();
+        private String assignment() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            String tipoIzq = equality();
             if (match(2110)) { // =
-                assignment();
+                String tipoDer = assignment();
+                if (!tiposCompatibles(tipoIzq, tipoDer)) {
+                    throw new AnalizadorSemanticoException("Tipos incompatibles en asignación");
+                }
+                return tipoIzq;
             }
+            return tipoIzq;
         }
 
-        private void equality() throws AnalizadorSintacticoException {
-            comparison();
+        private String equality() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            String tipo = comparison();
             while (match(2111) || match(2113)) { // ==, !=
-                comparison();
+                String der = comparison();
+                tipo = "boolean";
             }
+            return tipo;
         }
 
-        private void comparison() throws AnalizadorSintacticoException {
-            term();
+        private String comparison() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            String tipo = term();
             while (match(2070) || match(2072) || match(2080) || match(2082)) { // >, >=, <, <=
-                term();
+                String der = term();
+                tipo = "boolean";
             }
+            return tipo;
         }
 
-        private void term() throws AnalizadorSintacticoException {
-            factor();
+        private String term() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            String tipoIzq = factor();
+
             while (match(2050) || match(2060)) { // +, -
                 factor();
             }
+            return tipoIzq;
         }
 
-        private void factor() throws AnalizadorSintacticoException {
-            unary();
+        private String factor() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            String tipoIzq = unary();
             while (match(2020) || match(2030) || match(2040)) { // *, /, %
-                unary();
+                String tipoDer = unary(); // Corregido: Llamar a unary antes de verificar tipos
+
+                if (!tipoIzq.equals("int") && !tipoIzq.equals("float")) {
+                    throw new AnalizadorSemanticoException("Operación aritmética inválida con " + tipoIzq);
+                }
+
+                if (tipoIzq.equals("float") || tipoDer.equals("float")) {
+                    tipoIzq = "float";
+                } else {
+                    tipoIzq = "int";
+                }
             }
+            return tipoIzq;
         }
 
-        private void unary() throws AnalizadorSintacticoException {
+        private String unary() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
             if (match(2010) || match(2060)) { // !, -
-                unary();
+                return unary();
             } else {
-                primary();
+                return primary();
             }
         }
 
-        private void primary() throws AnalizadorSintacticoException {
+        private String primary() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
             Token t = peek();
-            if (t != null && ((t.id >= 7000 && t.id < tokenConstanteEntera) || // Constantes enteras
-                    (t.id >= 8000 && t.id < tokenConstanteFlotante) || // Constantes flotantes
-                    (t.id >= 6000 && t.id < tokenIdentificador))) { // Identificadores
-                advance(); // ¡IMPORTANTE: consumir el token!
-            } else if (match(5010)) { // (
-                expression();
-                consume(5011, "Se esperaba ')' después de expresión");
-            } else {
-                throw new AnalizadorSintacticoException("Se esperaba expresión en línea " +
-                        (t != null ? t.linea : "desconocida"));
+            if (t == null) throw new AnalizadorSintacticoException("Fin de archivo inesperado");
+
+            if (t.id >= 7000 && t.id < 8000) {
+                advance();
+                return "int";
             }
+            if (t.id >= 8000 && t.id < 9000) {
+                advance();
+                return "float";
+            }
+
+            if (t.id >= 6000 && t.id < 7000) {
+                Token token = advance();
+                Simbolo sim = tablaSimbolos.obtener(token);
+                return sim.tipo;
+            }
+
+            if (match(5010)) { // (
+                String tipo = expression();
+                consume(5011, "Se esperaba ')'");
+                return tipo;
+            }
+
+            throw new AnalizadorSintacticoException("Se esperaba expresión (número, variable o paréntesis). Encontrado: " + t.lexema + " (ID: " + t.id + ")");
         }
     }
 
-   
     public static void main(String[] args) {
         if (args.length != 2) {
-            System.err.println("Uso: java analizadorLexicoSintactico <archivo_entrada> <archivo_salida>");
+            System.err.println("Uso: java analizadorLexico <archivo_entrada> <archivo_salida>");
             return;
         }
 
@@ -278,21 +381,16 @@ public class analizadorLexico {
             List<Token> tokens = scan(codigo);
             escribirTokens(out, tokens);
             System.out.println("Análisis léxico completado. Tokens guardados en " + out);
-                        
-            
+
             Parser parser = new Parser(tokens);
             parser.parse();
-            
-        } catch (AnalizadorLexicoException e) {
-            System.err.println("Error léxico: " + e.getMessage());
-        } catch (AnalizadorSintacticoException e) {
-            System.err.println("Error sintáctico: " + e.getMessage());
-        } catch (IOException e) {
-            System.err.println("Error E/S: " + e.getMessage());
+
+        } catch (Exception e) {
+            System.err.println(e.getMessage());
+            e.printStackTrace();
         }
     }
 
-    
     private static String leerArchivo(String ruta) throws IOException {
         StringBuilder sb = new StringBuilder();
         try (BufferedReader br = new BufferedReader(new FileReader(ruta))) {
@@ -313,8 +411,7 @@ public class analizadorLexico {
         }
     }
 
-    
-    private static List<Token> scan(String codigo) throws AnalizadorLexicoException {
+    public static List<Token> scan(String codigo) throws AnalizadorLexicoException {
         List<Token> tokens = new ArrayList<>();
         int length = codigo.length();
         int i = 0;
@@ -323,7 +420,6 @@ public class analizadorLexico {
         while (i < length) {
             char c = codigo.charAt(i);
 
-            // AVANZA POR ESPACIOS : línea/columna
             if (Character.isWhitespace(c)) {
                 if (c == '\n') {
                     linea++;
@@ -335,7 +431,6 @@ public class analizadorLexico {
                 continue;
             }
 
-            // Comentarios de línea
             if (c == '/' && (i + 1 < length) && codigo.charAt(i + 1) == '/') {
                 i += 2;
                 columna += 2;
@@ -345,7 +440,6 @@ public class analizadorLexico {
                 continue;
             }
 
-            // Comentarios de bloque
             if (c == '/' && (i + 1 < length) && codigo.charAt(i + 1) == '*') {
                 i += 2; columna += 2;
                 boolean closed = false;
@@ -361,7 +455,6 @@ public class analizadorLexico {
                 continue;
             }
 
-            // Cadenas
             if (c == '"') {
                 int startCol = columna;
                 StringBuilder lit = new StringBuilder();
@@ -388,7 +481,6 @@ public class analizadorLexico {
                 continue;
             }
 
-            // Caracteres
             if (c == '\'') {
                 int startCol = columna;
                 StringBuilder lit = new StringBuilder();
@@ -414,7 +506,6 @@ public class analizadorLexico {
                 continue;
             }
 
-            // Identificadores
             if (Character.isLetter(c) || c == '_') {
                 int startCol = columna;
                 StringBuilder sb = new StringBuilder();
@@ -435,7 +526,6 @@ public class analizadorLexico {
                 continue;
             }
 
-            // Números
             if (Character.isDigit(c) || (c == '.' && (i + 1 < length) && Character.isDigit(codigo.charAt(i + 1)))) {
                 int startCol = columna;
                 StringBuilder num = new StringBuilder();
@@ -476,7 +566,6 @@ public class analizadorLexico {
                 continue;
             }
 
-            // Operadores de 2 caracteres
             String two = (i + 1 < length) ? "" + c + codigo.charAt(i + 1) : null;
             if (two != null && operadores.containsKey(two)) {
                 tokens.add(new Token(operadores.get(two), two, linea, columna));
@@ -484,7 +573,6 @@ public class analizadorLexico {
                 continue;
             }
 
-            // Operadores de 1 carácter
             String one = "" + c;
             if (operadores.containsKey(one)) {
                 tokens.add(new Token(operadores.get(one), one, linea, columna));
@@ -507,38 +595,4 @@ public class analizadorLexico {
 
         return tokens;
     }
-}
-
-//Analizis semantico
-
-class Simbolo {
-    String nombre;
-    String tipo;
-
-    public Simbolo(String nombre, String tipo) {
-        this.nombre = nombre;
-        this.tipo = tipo;
-    }
-}
-
-class TablaSimbolos{
-    private Map<String, Simbolo> tabla = new HashMap<>();
-
-    public void declarar(Token roken, Simbolo tipo) throws AnalizadorSemanticoException {
-        if (tabla.containsKey(token.lexema)) {
-            throw new AnalizadorSemanticoException("Error Semantico: La variable '" + token.lexema + "ya ha sido declarada. Linea " + token.linea);
-        }
-        tabla.put(toxen.lexema, new Simbolo(token.lexema, tipo));
-    }
-
-    public Simbolo obtener(Token token) throws AnalizadorSemanticoException {
-        if (!tabla.containsKey(token.lexema)) {
-            throw new AnalizadorSemanticoException("Error Semantico: La variable '" + toxen.lexema + "' no ha sido declarada. Linea "+ token.linea);
-        }
-        return tabla.get(token.lexema);
-    }
-}
-
-class AnalizadorSemanticoException extends Exception {
-    AnalizadorSemanticoException(String mensaje) {super(mensaje);}
 }

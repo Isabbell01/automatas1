@@ -1,4 +1,4 @@
-var suma = 10 + 20;
+int suma = 10 + 20;
 if (suma > 25) {
     print(suma);
 } else {
