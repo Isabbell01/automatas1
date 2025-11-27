@@ -5,8 +5,7 @@ import java.io.IOException;
 import java.util.*;
 
 /**
- * Analizador Léxico ISABEL
- * 
+ * compilador
  */
 public class analizadorLexico {
 
@@ -16,13 +15,12 @@ public class analizadorLexico {
     private static final Map<String, Integer> signos = new LinkedHashMap<>();
     private static final Map<String, Integer> agrupacion = new LinkedHashMap<>();
 
-   
     private static int tokenIdentificador = 6000;
     private static int tokenConstanteEntera = 7000;
     private static int tokenConstanteFlotante = 8000;
 
     static {
-      
+        
         palabrasReservadas.put("abstract", 1010);
         palabrasReservadas.put("assert", 1020);
         palabrasReservadas.put("boolean", 1030);
@@ -51,7 +49,7 @@ public class analizadorLexico {
         palabrasReservadas.put("return", 1260);
         palabrasReservadas.put("void", 1270);
 
-        
+        // Operadores 
         operadores.put("!=", 2113);
         operadores.put("==", 2111);
         operadores.put(">=", 2072);
@@ -71,11 +69,13 @@ public class analizadorLexico {
         operadores.put("|", 2140);
         operadores.put("^", 2150);
 
+        // Signos 
         signos.put(";", 3010);
         signos.put(",", 3020);
         // no tratamos '.' aquí como signo porque puede ser parte de un número
         // signos.put(".", 3030);
 
+        // Agrupación 
         agrupacion.put("{", 4010);
         agrupacion.put("}", 4011);
         agrupacion.put("(", 5010);
@@ -84,7 +84,7 @@ public class analizadorLexico {
         agrupacion.put("]", 5031);
     }
 
-    // Representación de un token
+    // Clase Token 
     private static class Token {
         final int id;
         final String lexema;
@@ -104,17 +104,165 @@ public class analizadorLexico {
         }
     }
 
-    // Excepción léxica con posición
+    // Excepciones 
     private static class AnalizadorLexicoException extends Exception {
         AnalizadorLexicoException(String mensaje) {
             super(mensaje);
         }
     }
 
-    
+    private static class AnalizadorSintacticoException extends Exception {
+        AnalizadorSintacticoException(String mensaje) {
+            super(mensaje);
+        }
+    }
+
+    // ANALIZADOR SINTÁCTICO 
+    private static class Parser {
+        private final List<Token> tokens;
+        private int current;
+
+        public Parser(List<Token> tokens) {
+            this.tokens = tokens;
+            this.current = 0;
+        }
+        //analisa el token actual
+        private Token peek() {
+            if (current >= tokens.size()) return null;
+            return tokens.get(current);
+        }
+        //avanza al siguiente token
+        private Token advance() {
+            if (current < tokens.size()) current++;
+            return tokens.get(current - 1);
+        }
+        //verifica si el token actual coincide con el id dado
+        private boolean check(int tokenId) {
+            return peek() != null && peek().id == tokenId;
+        }
+        //si coincide, avanza y retorna true; si no, retorna false
+        private boolean match(int tokenId) {
+            if (check(tokenId)) {
+                advance();
+                return true;
+            }
+            return false;
+        }
+
+        private Token consume(int tokenId, String mensaje) throws AnalizadorSintacticoException {
+            if (check(tokenId)) return advance();
+            throw new AnalizadorSintacticoException(mensaje + " en línea " + (peek() != null ? peek().linea : "desconocida"));
+        }
+
+        private int getTokenId(String palabra) {
+            return palabrasReservadas.getOrDefault(palabra, -1);
+        }
+
+        // Método principal de análisis sintáctico
+        public void parse() throws AnalizadorSintacticoException {
+            while (peek() != null) {
+                statement();
+            }
+            System.out.println("Análisis sintáctico completado - SIN ERRORES");
+        }
+
+        private void statement() throws AnalizadorSintacticoException {
+            if (match(getTokenId("if"))) {
+                ifStatement();
+            } else if (match(4010)) { // {
+                block();
+            } else {
+                expressionStatement();
+            }
+        }
+
+        private void ifStatement() throws AnalizadorSintacticoException {
+            consume(5010, "Se esperaba '(' después de 'if'");
+            expression();
+            consume(5011, "Se esperaba ')' después de condición");
+            statement();
+            
+            if (match(getTokenId("else"))) {
+                statement();
+            }
+        }
+
+        private void block() throws AnalizadorSintacticoException {
+            while (!check(4011) && peek() != null) {
+                statement();
+            }
+            consume(4011, "Se esperaba '}'");
+        }
+
+        private void expressionStatement() throws AnalizadorSintacticoException {
+            expression();
+            consume(3010, "Se esperaba ';' después de expresión");
+        }
+
+        private void expression() throws AnalizadorSintacticoException {
+            assignment();
+        }
+
+        private void assignment() throws AnalizadorSintacticoException {
+            equality();
+            if (match(2110)) { // =
+                assignment();
+            }
+        }
+
+        private void equality() throws AnalizadorSintacticoException {
+            comparison();
+            while (match(2111) || match(2113)) { // ==, !=
+                comparison();
+            }
+        }
+
+        private void comparison() throws AnalizadorSintacticoException {
+            term();
+            while (match(2070) || match(2072) || match(2080) || match(2082)) { // >, >=, <, <=
+                term();
+            }
+        }
+
+        private void term() throws AnalizadorSintacticoException {
+            factor();
+            while (match(2050) || match(2060)) { // +, -
+                factor();
+            }
+        }
+
+        private void factor() throws AnalizadorSintacticoException {
+            unary();
+            while (match(2020) || match(2030) || match(2040)) { // *, /, %
+                unary();
+            }
+        }
+
+        private void unary() throws AnalizadorSintacticoException {
+            if (match(2010) || match(2060)) { // !, -
+                unary();
+            } else {
+                primary();
+            }
+        }
+
+        private void primary() throws AnalizadorSintacticoException {
+            if (match(7000) || match(8000) || 
+                match(6000) || (peek() != null && peek().id >= 6000 && peek().id < tokenIdentificador)) {
+                // Números o identificadores - aceptados
+            } else if (match(5010)) { // (
+                expression();
+                consume(5011, "Se esperaba ')' después de expresión");
+            } else {
+                throw new AnalizadorSintacticoException("Se esperaba expresión");
+            }
+        }
+    }
+
+   
     public static void main(String[] args) {
         if (args.length != 2) {
-            System.err.println("Uso: java analizadorLexico <archivo_entrada> <archivo_salida>");
+            System.err.println("Uso: java analizadorLexicoSintactico <archivo_entrada> <archivo_salida>");
             return;
         }
 
@@ -126,13 +274,21 @@ public class analizadorLexico {
             List<Token> tokens = scan(codigo);
             escribirTokens(out, tokens);
             System.out.println("Análisis léxico completado. Tokens guardados en " + out);
+                        
+            
+            Parser parser = new Parser(tokens);
+            parser.parse();
+            
         } catch (AnalizadorLexicoException e) {
             System.err.println("Error léxico: " + e.getMessage());
+        } catch (AnalizadorSintacticoException e) {
+            System.err.println("Error sintáctico: " + e.getMessage());
         } catch (IOException e) {
             System.err.println("Error E/S: " + e.getMessage());
         }
     }
 
+    
     private static String leerArchivo(String ruta) throws IOException {
         StringBuilder sb = new StringBuilder();
         try (BufferedReader br = new BufferedReader(new FileReader(ruta))) {
@@ -144,7 +300,6 @@ public class analizadorLexico {
         return sb.toString();
     }
 
-    
     private static void escribirTokens(String ruta, List<Token> tokens) throws IOException {
         try (FileWriter fw = new FileWriter(ruta)) {
             for (Token t : tokens) {
@@ -176,7 +331,7 @@ public class analizadorLexico {
                 continue;
             }
 
-         
+            // Comentarios de línea
             if (c == '/' && (i + 1 < length) && codigo.charAt(i + 1) == '/') {
                 i += 2;
                 columna += 2;
@@ -186,7 +341,7 @@ public class analizadorLexico {
                 continue;
             }
 
-      
+            // Comentarios de bloque
             if (c == '/' && (i + 1 < length) && codigo.charAt(i + 1) == '*') {
                 i += 2; columna += 2;
                 boolean closed = false;
@@ -202,7 +357,7 @@ public class analizadorLexico {
                 continue;
             }
 
-         
+            // Cadenas
             if (c == '"') {
                 int startCol = columna;
                 StringBuilder lit = new StringBuilder();
@@ -214,7 +369,6 @@ public class analizadorLexico {
                     lit.append(d);
                     i++; columna++;
                     if (d == '\\' && i < length) {
-                   
                         char e = codigo.charAt(i);
                         lit.append(e);
                         i++; columna++;
@@ -226,11 +380,11 @@ public class analizadorLexico {
                     }
                 }
                 if (!closed) throw new AnalizadorLexicoException("Cadena sin cerrar en linea " + linea);
-                tokens.add(new Token(9000, lit.toString(), linea, startCol)); // 9000 = string literal token (ejemplo)
+                tokens.add(new Token(9000, lit.toString(), linea, startCol));
                 continue;
             }
 
-        
+            // Caracteres
             if (c == '\'') {
                 int startCol = columna;
                 StringBuilder lit = new StringBuilder();
@@ -252,13 +406,12 @@ public class analizadorLexico {
                     }
                 }
                 if (!closed) throw new AnalizadorLexicoException("Literal de carácter sin cerrar en linea " + linea);
-                tokens.add(new Token(9010, lit.toString(), linea, startCol)); // 9010 = char literal token
+                tokens.add(new Token(9010, lit.toString(), linea, startCol));
                 continue;
             }
 
-            // Identificadores : [a-zA-Z_][a-zA-Z0-9_]*
+            // Identificadores
             if (Character.isLetter(c) || c == '_') {
-                int start = i;
                 int startCol = columna;
                 StringBuilder sb = new StringBuilder();
                 while (i < length && (Character.isLetterOrDigit(codigo.charAt(i)) || codigo.charAt(i) == '_')) {
@@ -269,7 +422,6 @@ public class analizadorLexico {
                 if (palabrasReservadas.containsKey(palabra)) {
                     tokens.add(new Token(palabrasReservadas.get(palabra), palabra, linea, startCol));
                 } else {
-                    // validar identificador inválido 
                     if (palabra.matches(".*[@$].*")) {
                         throw new AnalizadorLexicoException("Identificador no válido '" + palabra + "' en " + linea + ":" + startCol);
                     }
@@ -279,14 +431,12 @@ public class analizadorLexico {
                 continue;
             }
 
-            
+            // Números
             if (Character.isDigit(c) || (c == '.' && (i + 1 < length) && Character.isDigit(codigo.charAt(i + 1)))) {
                 int startCol = columna;
-                int start = i;
                 StringBuilder num = new StringBuilder();
                 boolean hasDot = false;
 
-               
                 if (codigo.charAt(i) == '.') {
                     hasDot = true;
                     num.append('.');
@@ -308,7 +458,6 @@ public class analizadorLexico {
                 }
 
                 String raw = num.toString();
-                // validar múltiples puntos
                 if (raw.chars().filter(ch -> ch == '.').count() > 1) {
                     throw new AnalizadorLexicoException("Constante numérica inválida '" + raw + "' en " + linea + ":" + startCol);
                 }
@@ -323,7 +472,7 @@ public class analizadorLexico {
                 continue;
             }
 
-         
+            // Operadores de 2 caracteres
             String two = (i + 1 < length) ? "" + c + codigo.charAt(i + 1) : null;
             if (two != null && operadores.containsKey(two)) {
                 tokens.add(new Token(operadores.get(two), two, linea, columna));
@@ -331,7 +480,7 @@ public class analizadorLexico {
                 continue;
             }
 
-         
+            // Operadores de 1 carácter
             String one = "" + c;
             if (operadores.containsKey(one)) {
                 tokens.add(new Token(operadores.get(one), one, linea, columna));
@@ -349,7 +498,6 @@ public class analizadorLexico {
                 continue;
             }
 
-            // Cualquier otro carácter inesperado:
             throw new AnalizadorLexicoException("Símbolo no reconocido '" + c + "' en " + linea + ":" + columna);
         }
 
