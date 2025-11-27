@@ -121,6 +121,7 @@ public class analizadorLexico {
     private static class Parser {
         private final List<Token> tokens;
         private int current;
+        private TablaSimbolos tablaSimbolos = new TablaSimbolos();
 
         public Parser(List<Token> tokens) {
             this.tokens = tokens;
@@ -503,4 +504,38 @@ public class analizadorLexico {
 
         return tokens;
     }
+}
+
+//Analizis semantico
+
+class Simbolo {
+    String nombre;
+    String tipo;
+
+    public Simbolo(String nombre, String tipo) {
+        this.nombre = nombre;
+        this.tipo = tipo;
+    }
+}
+
+class TablaSimbolos{
+    private Map<String, Simbolo> tabla = new HashMap<>();
+
+    public void declarar(Token roken, Simbolo tipo) throws AnalizadorSemanticoException {
+        if (tabla.containsKey(token.lexema)) {
+            throw new AnalizadorSemanticoException("Error Semantico: La variable '" + token.lexema + "ya ha sido declarada. Linea " + token.linea);
+        }
+        tabla.put(toxen.lexema, new Simbolo(token.lexema, tipo));
+    }
+
+    public Simbolo obtener(Token token) throws AnalizadorSemanticoException {
+        if (!tabla.containsKey(token.lexema)) {
+            throw new AnalizadorSemanticoException("Error Semantico: La variable '" + toxen.lexema + "' no ha sido declarada. Linea "+ token.linea);
+        }
+        return tabla.get(token.lexema);
+    }
+}
+
+class AnalizadorSemanticoException extends Exception {
+    AnalizadorSemanticoException(String mensaje) {super(mensaje);}
 }
