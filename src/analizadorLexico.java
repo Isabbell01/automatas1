@@ -5,24 +5,21 @@ import java.io.IOException;
 import java.util.*;
 
 /**
- * Analizador Léxico ISABEL
- * 
+ * compilador
  */
 public class analizadorLexico {
 
-    
     private static final Map<String, Integer> palabrasReservadas = new LinkedHashMap<>();
     private static final Map<String, Integer> operadores = new LinkedHashMap<>();
     private static final Map<String, Integer> signos = new LinkedHashMap<>();
     private static final Map<String, Integer> agrupacion = new LinkedHashMap<>();
 
-   
+    // Contadores globales para IDs dinámicos
     private static int tokenIdentificador = 6000;
     private static int tokenConstanteEntera = 7000;
     private static int tokenConstanteFlotante = 8000;
 
     static {
-      
         palabrasReservadas.put("abstract", 1010);
         palabrasReservadas.put("assert", 1020);
         palabrasReservadas.put("boolean", 1030);
@@ -50,8 +47,9 @@ public class analizadorLexico {
         palabrasReservadas.put("new", 1250);
         palabrasReservadas.put("return", 1260);
         palabrasReservadas.put("void", 1270);
+        palabrasReservadas.put("print", 1280);
 
-        
+        // Operadores
         operadores.put("!=", 2113);
         operadores.put("==", 2111);
         operadores.put(">=", 2072);
@@ -71,11 +69,11 @@ public class analizadorLexico {
         operadores.put("|", 2140);
         operadores.put("^", 2150);
 
+        // Signos
         signos.put(";", 3010);
         signos.put(",", 3020);
-        // no tratamos '.' aquí como signo porque puede ser parte de un número
-        // signos.put(".", 3030);
 
+        // Agrupación
         agrupacion.put("{", 4010);
         agrupacion.put("}", 4011);
         agrupacion.put("(", 5010);
@@ -84,12 +82,12 @@ public class analizadorLexico {
         agrupacion.put("]", 5031);
     }
 
-    // Representación de un token
-    private static class Token {
-        final int id;
-        final String lexema;
-        final int linea;
-        final int columna;
+    // Clase Token
+    public static class Token {
+        public final int id;
+        public final String lexema;
+        public final int linea;
+        public final int columna;
 
         Token(int id, String lexema, int linea, int columna) {
             this.id = id;
@@ -104,14 +102,272 @@ public class analizadorLexico {
         }
     }
 
-    // Excepción léxica con posición
-    private static class AnalizadorLexicoException extends Exception {
-        AnalizadorLexicoException(String mensaje) {
-            super(mensaje);
+    //Analizador Semantico
+    static class Simbolo {
+        String nombre;
+        String tipo;
+
+        public Simbolo(String nombre, String tipo) {
+            this.nombre = nombre;
+            this.tipo = tipo;
         }
     }
 
-    
+    static class TablaSimbolos {
+        private Map<String, Simbolo> tabla = new HashMap<>();
+
+        public void declarar(Token token, String tipo) throws AnalizadorSemanticoException {
+            if (tabla.containsKey(token.lexema)) {
+                throw new AnalizadorSemanticoException("Error Semantico: La variable '" + token.lexema + "' ya ha sido declarada. Linea " + token.linea);
+            }
+            tabla.put(token.lexema, new Simbolo(token.lexema, tipo));
+        }
+
+        public Simbolo obtener(Token token) throws AnalizadorSemanticoException {
+            if (!tabla.containsKey(token.lexema)) {
+                throw new AnalizadorSemanticoException("Error Semantico: La variable '" + token.lexema + "' no ha sido declarada. Linea " + token.linea);
+            }
+            return tabla.get(token.lexema);
+        }
+    }
+
+    // Excepciones
+    private static class AnalizadorLexicoException extends Exception {
+        AnalizadorLexicoException(String mensaje) { super(mensaje); }
+    }
+
+    private static class AnalizadorSintacticoException extends Exception {
+        AnalizadorSintacticoException(String mensaje) { super(mensaje); }
+    }
+
+    private static class AnalizadorSemanticoException extends Exception {
+        AnalizadorSemanticoException(String mensaje) { super(mensaje); }
+    }
+
+    //Analizador Sintactico
+    private static class Parser {
+        private final List<Token> tokens;
+        private int current;
+        private TablaSimbolos tablaSimbolos = new TablaSimbolos();
+
+        public Parser(List<Token> tokens) {
+            this.tokens = tokens;
+            this.current = 0;
+        }
+
+        private Token peek() {
+            if (current >= tokens.size()) return null;
+            return tokens.get(current);
+        }
+
+        private Token advance() {
+            if (current < tokens.size()) current++;
+            return tokens.get(current - 1);
+        }
+
+        private boolean check(int tokenId) {
+            return peek() != null && peek().id == tokenId;
+        }
+
+        private boolean match(int tokenId) {
+            if (check(tokenId)) {
+                advance();
+                return true;
+            }
+            return false;
+        }
+
+        private Token consume(int tokenId, String mensaje) throws AnalizadorSintacticoException {
+            if (check(tokenId)) return advance();
+            throw new AnalizadorSintacticoException(mensaje + " en línea " + (peek() != null ? peek().linea : "desconocida"));
+        }
+
+        private int getTokenId(String palabra) {
+            return palabrasReservadas.getOrDefault(palabra, -1);
+        }
+
+        public void parse() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            while (peek() != null) {
+                statement();
+            }
+            System.out.println("Análisis sintáctico completado - SIN ERRORES");
+        }
+
+        private void statement() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            // Declaración de variables (int x;)
+            if (match(1220) || match(1180) || match(1030)) {
+                String tipoDato = tokens.get(current - 1).lexema;
+                declaration(tipoDato);
+            }
+            else if (match(getTokenId("if"))) {
+                ifStatement();
+            }
+            else if (match(1280)) {
+                printStatement();
+            }
+            else if (match(4010)) { // {
+                block();
+            }
+            else {
+                expressionStatement();
+            }
+        }
+
+        private void printStatement() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            consume(5010, "Se esperaba '(' despues de 'print'");
+            expression();
+            consume(5011, "Se esperaba ')' después de la expresión");
+            consume(3010, "Se esperaba ';' al final de la instrucción");
+            System.out.println("Encontrada instrucción PRINT");
+        }
+
+        private void declaration(String tipoDato) throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            Token nombreVar;
+            if (peek() != null && peek().id >= 6000 && peek().id < 7000) {
+                nombreVar = advance();
+            } else {
+                throw new AnalizadorSintacticoException("Se esperaba identificador en línea " + (peek() != null ? peek().linea : "fin"));
+            }
+
+            tablaSimbolos.declarar(nombreVar, tipoDato);
+
+            if (match(2110)) { // =
+                String tipoExpresion = expression();
+
+                if (!tiposCompatibles(tipoDato, tipoExpresion)) {
+                    throw new AnalizadorSemanticoException("Error de tipos: No se puede asignar " + tipoExpresion + " a " + tipoDato);
+                }
+            }
+            consume(3010, "Se esperaba ';'");
+        }
+
+        private boolean tiposCompatibles(String receptor, String valor) {
+            if (receptor.equals(valor)) return true;
+            if (receptor.equals("float") && valor.equals("int")) return true;
+            return false;
+        }
+
+        private void ifStatement() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            consume(5010, "Se esperaba '(' después de 'if'");
+            expression();
+            consume(5011, "Se esperaba ')' después de condición");
+            statement();
+
+            if (match(getTokenId("else"))) {
+                statement();
+            }
+        }
+
+        private void block() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            while (!check(4011) && peek() != null) {
+                statement();
+            }
+            consume(4011, "Se esperaba '}'");
+        }
+
+        private void expressionStatement() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            expression();
+            consume(3010, "Se esperaba ';' después de expresión");
+        }
+
+        private String expression() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            return assignment();
+        }
+
+        private String assignment() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            String tipoIzq = equality();
+            if (match(2110)) { // =
+                String tipoDer = assignment();
+                if (!tiposCompatibles(tipoIzq, tipoDer)) {
+                    throw new AnalizadorSemanticoException("Tipos incompatibles en asignación");
+                }
+                return tipoIzq;
+            }
+            return tipoIzq;
+        }
+
+        private String equality() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            String tipo = comparison();
+            while (match(2111) || match(2113)) { // ==, !=
+                String der = comparison();
+                tipo = "boolean";
+            }
+            return tipo;
+        }
+
+        private String comparison() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            String tipo = term();
+            while (match(2070) || match(2072) || match(2080) || match(2082)) { // >, >=, <, <=
+                String der = term();
+                tipo = "boolean";
+            }
+            return tipo;
+        }
+
+        private String term() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            String tipoIzq = factor();
+
+            while (match(2050) || match(2060)) { // +, -
+                factor();
+            }
+            return tipoIzq;
+        }
+
+        private String factor() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            String tipoIzq = unary();
+            while (match(2020) || match(2030) || match(2040)) { // *, /, %
+                String tipoDer = unary(); // Corregido: Llamar a unary antes de verificar tipos
+
+                if (!tipoIzq.equals("int") && !tipoIzq.equals("float")) {
+                    throw new AnalizadorSemanticoException("Operación aritmética inválida con " + tipoIzq);
+                }
+
+                if (tipoIzq.equals("float") || tipoDer.equals("float")) {
+                    tipoIzq = "float";
+                } else {
+                    tipoIzq = "int";
+                }
+            }
+            return tipoIzq;
+        }
+
+        private String unary() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            if (match(2010) || match(2060)) { // !, -
+                return unary();
+            } else {
+                return primary();
+            }
+        }
+
+        private String primary() throws AnalizadorSintacticoException, AnalizadorSemanticoException {
+            Token t = peek();
+            if (t == null) throw new AnalizadorSintacticoException("Fin de archivo inesperado");
+
+            if (t.id >= 7000 && t.id < 8000) {
+                advance();
+                return "int";
+            }
+            if (t.id >= 8000 && t.id < 9000) {
+                advance();
+                return "float";
+            }
+
+            if (t.id >= 6000 && t.id < 7000) {
+                Token token = advance();
+                Simbolo sim = tablaSimbolos.obtener(token);
+                return sim.tipo;
+            }
+
+            if (match(5010)) { // (
+                String tipo = expression();
+                consume(5011, "Se esperaba ')'");
+                return tipo;
+            }
+
+            throw new AnalizadorSintacticoException("Se esperaba expresión (número, variable o paréntesis). Encontrado: " + t.lexema + " (ID: " + t.id + ")");
+        }
+    }
+
     public static void main(String[] args) {
         if (args.length != 2) {
             System.err.println("Uso: java analizadorLexico <archivo_entrada> <archivo_salida>");
@@ -126,10 +382,13 @@ public class analizadorLexico {
             List<Token> tokens = scan(codigo);
             escribirTokens(out, tokens);
             System.out.println("Análisis léxico completado. Tokens guardados en " + out);
-        } catch (AnalizadorLexicoException e) {
-            System.err.println("Error léxico: " + e.getMessage());
-        } catch (IOException e) {
-            System.err.println("Error E/S: " + e.getMessage());
+
+            Parser parser = new Parser(tokens);
+            parser.parse();
+
+        } catch (Exception e) {
+            System.err.println(e.getMessage());
+            e.printStackTrace();
         }
     }
 
@@ -144,7 +403,6 @@ public class analizadorLexico {
         return sb.toString();
     }
 
-    
     private static void escribirTokens(String ruta, List<Token> tokens) throws IOException {
         try (FileWriter fw = new FileWriter(ruta)) {
             for (Token t : tokens) {
@@ -154,8 +412,7 @@ public class analizadorLexico {
         }
     }
 
-    
-    private static List<Token> scan(String codigo) throws AnalizadorLexicoException {
+    public static List<Token> scan(String codigo) throws AnalizadorLexicoException {
         List<Token> tokens = new ArrayList<>();
         int length = codigo.length();
         int i = 0;
@@ -164,7 +421,6 @@ public class analizadorLexico {
         while (i < length) {
             char c = codigo.charAt(i);
 
-            // AVANZA POR ESPACIOS : línea/columna
             if (Character.isWhitespace(c)) {
                 if (c == '\n') {
                     linea++;
@@ -176,7 +432,6 @@ public class analizadorLexico {
                 continue;
             }
 
-         
             if (c == '/' && (i + 1 < length) && codigo.charAt(i + 1) == '/') {
                 i += 2;
                 columna += 2;
@@ -186,7 +441,6 @@ public class analizadorLexico {
                 continue;
             }
 
-      
             if (c == '/' && (i + 1 < length) && codigo.charAt(i + 1) == '*') {
                 i += 2; columna += 2;
                 boolean closed = false;
@@ -202,7 +456,6 @@ public class analizadorLexico {
                 continue;
             }
 
-         
             if (c == '"') {
                 int startCol = columna;
                 StringBuilder lit = new StringBuilder();
@@ -214,7 +467,6 @@ public class analizadorLexico {
                     lit.append(d);
                     i++; columna++;
                     if (d == '\\' && i < length) {
-                   
                         char e = codigo.charAt(i);
                         lit.append(e);
                         i++; columna++;
@@ -226,11 +478,10 @@ public class analizadorLexico {
                     }
                 }
                 if (!closed) throw new AnalizadorLexicoException("Cadena sin cerrar en linea " + linea);
-                tokens.add(new Token(9000, lit.toString(), linea, startCol)); // 9000 = string literal token (ejemplo)
+                tokens.add(new Token(9000, lit.toString(), linea, startCol));
                 continue;
             }
 
-        
             if (c == '\'') {
                 int startCol = columna;
                 StringBuilder lit = new StringBuilder();
@@ -252,13 +503,11 @@ public class analizadorLexico {
                     }
                 }
                 if (!closed) throw new AnalizadorLexicoException("Literal de carácter sin cerrar en linea " + linea);
-                tokens.add(new Token(9010, lit.toString(), linea, startCol)); // 9010 = char literal token
+                tokens.add(new Token(9010, lit.toString(), linea, startCol));
                 continue;
             }
 
-            // Identificadores : [a-zA-Z_][a-zA-Z0-9_]*
             if (Character.isLetter(c) || c == '_') {
-                int start = i;
                 int startCol = columna;
                 StringBuilder sb = new StringBuilder();
                 while (i < length && (Character.isLetterOrDigit(codigo.charAt(i)) || codigo.charAt(i) == '_')) {
@@ -269,7 +518,6 @@ public class analizadorLexico {
                 if (palabrasReservadas.containsKey(palabra)) {
                     tokens.add(new Token(palabrasReservadas.get(palabra), palabra, linea, startCol));
                 } else {
-                    // validar identificador inválido 
                     if (palabra.matches(".*[@$].*")) {
                         throw new AnalizadorLexicoException("Identificador no válido '" + palabra + "' en " + linea + ":" + startCol);
                     }
@@ -279,14 +527,11 @@ public class analizadorLexico {
                 continue;
             }
 
-            
             if (Character.isDigit(c) || (c == '.' && (i + 1 < length) && Character.isDigit(codigo.charAt(i + 1)))) {
                 int startCol = columna;
-                int start = i;
                 StringBuilder num = new StringBuilder();
                 boolean hasDot = false;
 
-               
                 if (codigo.charAt(i) == '.') {
                     hasDot = true;
                     num.append('.');
@@ -308,7 +553,6 @@ public class analizadorLexico {
                 }
 
                 String raw = num.toString();
-                // validar múltiples puntos
                 if (raw.chars().filter(ch -> ch == '.').count() > 1) {
                     throw new AnalizadorLexicoException("Constante numérica inválida '" + raw + "' en " + linea + ":" + startCol);
                 }
@@ -323,7 +567,6 @@ public class analizadorLexico {
                 continue;
             }
 
-         
             String two = (i + 1 < length) ? "" + c + codigo.charAt(i + 1) : null;
             if (two != null && operadores.containsKey(two)) {
                 tokens.add(new Token(operadores.get(two), two, linea, columna));
@@ -331,7 +574,6 @@ public class analizadorLexico {
                 continue;
             }
 
-         
             String one = "" + c;
             if (operadores.containsKey(one)) {
                 tokens.add(new Token(operadores.get(one), one, linea, columna));
@@ -349,7 +591,6 @@ public class analizadorLexico {
                 continue;
             }
 
-            // Cualquier otro carácter inesperado:
             throw new AnalizadorLexicoException("Símbolo no reconocido '" + c + "' en " + linea + ":" + columna);
         }
 
